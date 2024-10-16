@@ -10,14 +10,14 @@ class ConnectivityCard extends StatelessWidget {
   final Function(int) onSwitchChannel;
 
   const ConnectivityCard({
-    Key? key,
+    super.key,
     required this.isConnected,
     required this.channelIndex,
     required this.channels,
     required this.onConnect,
     required this.onDisconnect,
     required this.onSwitchChannel,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
