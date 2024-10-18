@@ -30,6 +30,8 @@ migrate_working_dir/
 .pub-cache/
 .pub/
 /build/
+audio_files/
+node_modules/
 
 # Symbolication related
 app.*.symbols

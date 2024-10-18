@@ -1,0 +1,20 @@
+{
+  "Channel 1": {
+    "name": "Channel 1",
+    "creatorId": "system",
+    "isDefault": true,
+    "members": null
+  },
+  "Channel 2": {
+    "name": "Channel 2",
+    "creatorId": "system",
+    "isDefault": true,
+    "members": null
+  },
+  "Channel 3": {
+    "name": "Channel 3",
+    "creatorId": "system",
+    "isDefault": true,
+    "members": null
+  }
+}
