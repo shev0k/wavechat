@@ -38,7 +38,6 @@ class ConnectivityCard extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 24.0),
         child: Stack(
           children: [
-            // Place the icon at the top-right corner
             Positioned(
               top: 0,
               right: 0,
@@ -52,7 +51,6 @@ class ConnectivityCard extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                // Connectivity Status Text
                 Text(
                   isConnected ? 'ONLINE' : 'OFFLINE',
                   style: const TextStyle(
@@ -62,23 +60,22 @@ class ConnectivityCard extends StatelessWidget {
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 20),
-                // Channel Selector
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    // Decrease Channel Button
                     IconButton(
-                      icon: const Icon(
-                        Icons.arrow_drop_down,
-                        color: Colors.white,
-                        size: 32,
+                      icon: const Text(
+                        '▼',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 32,
+                        ),
                       ),
                       onPressed: (channels.isNotEmpty && channelIndex >= 0) ? () {
                         onSwitchChannel(-1);
                       } : null,
                     ),
                     const SizedBox(width: 20),
-                    // Current Channel
                     Text(
                       currentChannelName,
                       style: const TextStyle(
@@ -87,12 +84,13 @@ class ConnectivityCard extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 20),
-                    // Increase Channel Button
                     IconButton(
-                      icon: const Icon(
-                        Icons.arrow_drop_up,
-                        color: Colors.white,
-                        size: 32,
+                      icon: const Text(
+                        '▲',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 32,
+                        ),
                       ),
                       onPressed: (channels.isNotEmpty && channelIndex >= 0) ? () {
                         onSwitchChannel(1);
@@ -101,11 +99,9 @@ class ConnectivityCard extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 20),
-                // Action Buttons Row
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    // Turn On/Off Button with Icon
                     AnimatedSwitcher(
                       duration: const Duration(milliseconds: 200),
                       child: ElevatedButton(
@@ -129,11 +125,10 @@ class ConnectivityCard extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 20),
-                    // Settings Button
                     AnimatedSwitcher(
                       duration: const Duration(milliseconds: 200),
                       child: ElevatedButton(
-                        key: ValueKey('settings'),
+                        key: const ValueKey('settings'),
                         onPressed: onChannelOptions,
                         style: ElevatedButton.styleFrom(
                           shape: const CircleBorder(

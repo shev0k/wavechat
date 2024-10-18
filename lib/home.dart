@@ -2,13 +2,56 @@
 
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'api_service.dart';
-import 'recorder_service.dart';
+import 'services/api_service.dart';
+import 'services/recorder_service.dart';
 import 'widgets/connectivity_card.dart';
 import 'dart:async';
 import 'dart:typed_data';
-import 'logger.dart';
+import 'services/logger.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+/*
+===============================================================================
+                                    SECTIONS
+===============================================================================
+
+1. VARIABLES .................................................................. Line 34
+   - variables used throughout the class
+
+2. INITIALIZATION ............................................................. Line 54
+   - initState()
+   - _initializeUser()
+   - _loadLastSelectedChannel()
+   - _openRecorder()
+
+3. EVENT LISTENERS ............................................................ Line 98
+   - _setupEventListener()
+   - _setupAudioStreamListener()
+
+4. RECORDER METHODS ........................................................... Line 153
+   - _startStreaming()
+   - _stopStreaming()
+
+5. API CALLS .................................................................. Line 169
+   - _fetchChannels()
+   - _connect()
+   - _disconnect()
+   - _createChannel()
+   - _joinChannel()
+   - _leaveChannel()
+   - _deleteChannel()
+
+6. UI METHODS ................................................................. Line 268
+   - _switchChannel()
+   - _showSnackBar()
+   - _showChannelOptionsDialog()
+   - _showCreateChannelDialog()
+   - _showJoinChannelDialog()
+   - _showManageChannelsDialog()
+   - _showCustomDialog()
+
+===============================================================================
+*/
 
 class WalkieTalkieHome extends StatefulWidget {
   const WalkieTalkieHome({super.key});
@@ -18,6 +61,12 @@ class WalkieTalkieHome extends StatefulWidget {
 }
 
 class _WalkieTalkieHomeState extends State<WalkieTalkieHome> {
+
+  // ============================================================================
+  //                                    VARIABLES
+  // ============================================================================
+  // VARIABLES USED THROUGHOUT THE CLASS.
+
   final ApiService _apiService = ApiService();
   late final RecorderService _recorderService;
   late final StreamController<Uint8List> _audioStreamController;
@@ -30,15 +79,20 @@ class _WalkieTalkieHomeState extends State<WalkieTalkieHome> {
 
   bool _microphonePermissionDenied = false;
 
-  // Server status
+  // SERVER STATUS
   bool _serverOnline = true;
 
-  // Common TextStyle
+  // COMMON TEXT STYLE
   final TextStyle _textStyle = const TextStyle(
     color: Colors.white,
     fontSize: 16,
     fontFamily: 'RetroFont',
   );
+
+  // ============================================================================
+  //                                   INITIALIZATION
+  // ============================================================================
+  // INITIALIZING THE STATE AND SETUP.
 
   @override
   void initState() {
@@ -52,7 +106,7 @@ class _WalkieTalkieHomeState extends State<WalkieTalkieHome> {
     _setupEventListener();
     _apiService.startHeartbeat();
 
-    // Preload images to ensure they are loaded even if the server is offline
+    // PRELOAD IMAGES
     WidgetsBinding.instance.addPostFrameCallback((_) {
       precacheImage(const AssetImage('assets/images/talk_active.png'), context);
       precacheImage(const AssetImage('assets/images/talk_inactive.png'), context);
@@ -83,34 +137,54 @@ class _WalkieTalkieHomeState extends State<WalkieTalkieHome> {
     }
   }
 
-  void _setupEventListener() {
-  _apiService.events.listen((event) async {
-    if (event['type'] == 'server_online') {
-      _showSnackBar('Server is back online.');
+  Future<void> _openRecorder() async {
+    var status = await Permission.microphone.request();
+    if (status.isGranted) {
+      await _recorderService.openRecorder();
+    } else {
+      // PERMISSION DENIED
       setState(() {
-        _serverOnline = true;
+        _microphonePermissionDenied = true;
       });
-      await _fetchChannels();
-      if (!mounted) return;
+      return;
+    }
+  }
 
-      if (channelsNotifier.value.isNotEmpty) {
-        if (channelIndex == -1) {
-          setState(() {
-            channelIndex = 0;
-          });
-          SharedPreferences prefs = await SharedPreferences.getInstance();
-          prefs.setString('lastChannel', channelsNotifier.value[channelIndex]['name']);
+  // ============================================================================
+  //                                  EVENT LISTENERS
+  // ============================================================================
+  // SETTING UP EVENT LISTENERS.
+
+  void _setupEventListener() {
+    _apiService.events.listen((event) async {
+      if (event['type'] == 'server_online') {
+        _showSnackBar('Server is back online.');
+        setState(() {
+          _serverOnline = true;
+        });
+        await _fetchChannels();
+        if (!mounted) return;
+
+        if (channelsNotifier.value.isNotEmpty) {
+          if (channelIndex == -1) {
+            setState(() {
+              channelIndex = 0;
+            });
+            SharedPreferences prefs = await SharedPreferences.getInstance();
+            prefs.setString('lastChannel', channelsNotifier.value[channelIndex]['name']);
+          }
+        }
+
+        // RECONNECT IF PREVIOUSLY CONNECTED
+        if (isConnected) {
+          String channelName = channelsNotifier.value.isNotEmpty && channelIndex >= 0
+              ? channelsNotifier.value[channelIndex]['name']
+              : null;
+          _connect(channelName);
         }
       }
 
-      // Attempt to reconnect if previously connected
-      if (isConnected) {
-        String channelName = channelsNotifier.value.isNotEmpty && channelIndex >= 0
-            ? channelsNotifier.value[channelIndex]['name']
-            : null;
-        _connect(channelName);
-            }
-    }
+      // HANDLE CHANNEL DELETED EVENT
       if (event['type'] == 'channel_deleted') {
         String deletedChannel = event['channelName'];
         String? currentChannelName = channelsNotifier.value.isNotEmpty &&
@@ -119,12 +193,11 @@ class _WalkieTalkieHomeState extends State<WalkieTalkieHome> {
             ? channelsNotifier.value[channelIndex]['name']
             : null;
 
-        await _fetchChannels(); // Re-fetch channels from server
+        await _fetchChannels();
         if (!mounted) return;
 
         if (deletedChannel == currentChannelName) {
-          // Current channel has been deleted
-          // Attempt to switch to "Channel 1"
+          // CURRENT CHANNEL DELETED
           int newIndex = channelsNotifier.value
               .indexWhere((channel) => channel['name'] == 'Channel 1');
           if (newIndex != -1) {
@@ -136,12 +209,12 @@ class _WalkieTalkieHomeState extends State<WalkieTalkieHome> {
             if (isConnected) {
               _apiService.switchChannel('Channel 1');
             } else {
-              _connect('Channel 1'); // Attempt to connect to "Channel 1"
+              _connect('Channel 1');
             }
             _showSnackBar(
                 'Channel "$deletedChannel" has been deleted. Switched to "Channel 1".');
           } else if (channelsNotifier.value.isNotEmpty) {
-            // "Channel 1" not found, switch to first available channel
+            // SWITCH TO FIRST AVAILABLE CHANNEL
             setState(() {
               channelIndex = 0;
             });
@@ -150,12 +223,12 @@ class _WalkieTalkieHomeState extends State<WalkieTalkieHome> {
             if (isConnected) {
               _apiService.switchChannel(channelsNotifier.value[channelIndex]['name']);
             } else {
-              _connect(channelsNotifier.value[channelIndex]['name']); // Attempt to connect
+              _connect(channelsNotifier.value[channelIndex]['name']);
             }
             _showSnackBar(
                 'Channel "$deletedChannel" has been deleted. Switched to "${channelsNotifier.value[channelIndex]['name']}".');
           } else {
-            // No channels are available
+            // NO CHANNELS AVAILABLE
             setState(() {
               channelIndex = -1;
               isConnected = false;
@@ -169,8 +242,7 @@ class _WalkieTalkieHomeState extends State<WalkieTalkieHome> {
                 'Channel "$deletedChannel" has been deleted. No channels available.');
           }
         } else {
-          // Deleted channel is not the current channel
-          // Update the channel index if necessary
+          // DELETED CHANNEL IS NOT CURRENT CHANNEL
           int newIndex = channelsNotifier.value
               .indexWhere((channel) => channel['name'] == currentChannelName);
           if (newIndex != -1) {
@@ -186,10 +258,10 @@ class _WalkieTalkieHomeState extends State<WalkieTalkieHome> {
             if (isConnected) {
               _apiService.switchChannel(channelsNotifier.value[channelIndex]['name']);
             } else {
-              _connect(channelsNotifier.value[channelIndex]['name']); // Attempt to connect
+              _connect(channelsNotifier.value[channelIndex]['name']);
             }
           } else {
-            // No channels left
+            // NO CHANNELS LEFT
             setState(() {
               channelIndex = -1;
               isConnected = false;
@@ -208,9 +280,8 @@ class _WalkieTalkieHomeState extends State<WalkieTalkieHome> {
           isConnected = false;
         });
       } else if (event['type'] == 'connection_closed') {
-        // Connection was closed intentionally or unintentionally
+        // CONNECTION CLOSED
         Logger.log('Connection closed.');
-        // Only set isConnected to false if not switching channels
         if (!_apiService.isSwitchingChannel) {
           setState(() {
             isConnected = false;
@@ -229,31 +300,12 @@ class _WalkieTalkieHomeState extends State<WalkieTalkieHome> {
         });
         await _fetchChannels();
 
-        // Attempt to reconnect if the user was connected before
+        // RECONNECT IF PREVIOUSLY CONNECTED
         if (isConnected) {
           _connect();
         }
       }
     });
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    // This method can be used to preload images, but we already did it in initState
-  }
-
-  Future<void> _openRecorder() async {
-    var status = await Permission.microphone.request();
-    if (status.isGranted) {
-      await _recorderService.openRecorder();
-    } else {
-      // Handle permission denied
-      setState(() {
-        _microphonePermissionDenied = true;
-      });
-      return;
-    }
   }
 
   void _setupAudioStreamListener() {
@@ -264,129 +316,10 @@ class _WalkieTalkieHomeState extends State<WalkieTalkieHome> {
     });
   }
 
-  Future<void> _fetchChannels() async {
-  try {
-    final fetchedChannels = await _apiService.fetchChannels();
-    if (!mounted) return;
-
-    setState(() {
-      channelsNotifier.value = fetchedChannels;
-      if (channelsNotifier.value.isNotEmpty) {
-        if (channelIndex == -1) {
-          // If previously there were no channels, set channelIndex to 0
-          channelIndex = 0;
-        } else if (channelIndex >= channelsNotifier.value.length) {
-          // If channelIndex is out of bounds, adjust it
-          channelIndex = channelsNotifier.value.length - 1;
-        }
-      } else {
-        // No channels available
-        channelIndex = -1;
-      }
-    });
-  } catch (e) {
-    Logger.log('Error fetching channels: $e');
-    if (!mounted) return;
-    setState(() {
-      channelsNotifier.value = [];
-      channelIndex = -1;
-    });
-  }
-
-  // Remember last connected channel if applicable
-  SharedPreferences prefs = await SharedPreferences.getInstance();
-  String? lastChannel = prefs.getString('lastChannel');
-  if (lastChannel != null) {
-    int index = channelsNotifier.value.indexWhere((channel) => channel['name'] == lastChannel);
-    if (index != -1) {
-      setState(() {
-        channelIndex = index;
-      });
-    } else if (channelsNotifier.value.isNotEmpty) {
-      setState(() {
-        channelIndex = 0;
-      });
-      prefs.setString('lastChannel', channelsNotifier.value[0]['name']);
-    } else {
-      setState(() {
-        channelIndex = -1;
-      });
-      prefs.remove('lastChannel');
-    }
-  }
-}
-
-
-  @override
-  void dispose() {
-    if (isTalking) {
-      _stopStreaming();
-    }
-    if (isConnected) {
-      _disconnect();
-    }
-    _recorderService.closeRecorder();
-    _audioStreamSubscription?.cancel();
-    _audioStreamController.close();
-    _apiService.dispose();
-    channelsNotifier.dispose();
-    super.dispose();
-  }
-
-  void _connect([String? channelName]) {
-  if (isConnected || _microphonePermissionDenied) return;
-  if (!_serverOnline) {
-    _showSnackBar('Attempting to connect, but the server appears to be offline.');
-    // Continue attempting to connect
-  }
-  if (channelIndex == -1 || channelsNotifier.value.isEmpty) {
-    _showSnackBar('No channels available to connect.');
-    return;
-  }
-  try {
-    String channelToConnect = channelName ?? channelsNotifier.value[channelIndex]['name'];
-    _apiService.connectToWebSocket(channelToConnect);
-    setState(() {
-      isConnected = true;
-    });
-  } catch (e) {
-    Logger.log('Connection error: $e');
-    _showSnackBar('Failed to connect to the server.');
-    setState(() {
-      isConnected = false;
-    });
-  }
-}
-
-
-  void _disconnect() {
-    if (!isConnected) return;
-    _apiService.closeWebSocket();
-    setState(() {
-      isConnected = false;
-    });
-  }
-
-  void _switchChannel(int delta) {
-    bool wasConnected = isConnected;
-    if (isConnected) {
-      _apiService.switchChannel(
-          channelsNotifier.value[(channelIndex + delta) % channelsNotifier.value.length]['name']);
-    }
-    setState(() {
-      int newIndex = (channelIndex + delta) % channelsNotifier.value.length;
-      if (newIndex < 0) {
-        newIndex += channelsNotifier.value.length;
-      }
-      channelIndex = newIndex;
-    });
-    SharedPreferences.getInstance().then((prefs) {
-      prefs.setString('lastChannel', channelsNotifier.value[channelIndex]['name']);
-    });
-    if (wasConnected) {
-      // No need to reconnect, as switchChannel handles it
-    }
-  }
+  // ============================================================================
+  //                                 RECORDER METHODS
+  // ============================================================================
+  // STARTING AND STOPPING AUDIO STREAMING.
 
   void _startStreaming() async {
     if (!isConnected || _microphonePermissionDenied) {
@@ -409,11 +342,343 @@ class _WalkieTalkieHomeState extends State<WalkieTalkieHome> {
     });
   }
 
+  // ============================================================================
+  //                                    API CALLS
+  // ============================================================================
+  // INTERACT WITH THE API SERVICE.
+
+  Future<void> _fetchChannels() async {
+    try {
+      final fetchedChannels = await _apiService.fetchChannels();
+      if (!mounted) return;
+
+      setState(() {
+        channelsNotifier.value = fetchedChannels;
+        if (channelsNotifier.value.isNotEmpty) {
+          if (channelIndex == -1) {
+            // SET CHANNELINDEX TO 0
+            channelIndex = 0;
+          } else if (channelIndex >= channelsNotifier.value.length) {
+            // ADJUST CHANNELINDEX
+            channelIndex = channelsNotifier.value.length - 1;
+          }
+        } else {
+          // NO CHANNELS AVAILABLE
+          channelIndex = -1;
+        }
+      });
+    } catch (e) {
+      Logger.log('Error fetching channels: $e');
+      if (!mounted) return;
+      setState(() {
+        channelsNotifier.value = [];
+        channelIndex = -1;
+      });
+    }
+
+    // REMEMBER LAST CONNECTED CHANNEL
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    String? lastChannel = prefs.getString('lastChannel');
+    if (lastChannel != null) {
+      int index = channelsNotifier.value.indexWhere((channel) => channel['name'] == lastChannel);
+      if (index != -1) {
+        setState(() {
+          channelIndex = index;
+        });
+      } else if (channelsNotifier.value.isNotEmpty) {
+        setState(() {
+          channelIndex = 0;
+        });
+        prefs.setString('lastChannel', channelsNotifier.value[0]['name']);
+      } else {
+        setState(() {
+          channelIndex = -1;
+        });
+        prefs.remove('lastChannel');
+      }
+    }
+  }
+
+  void _connect([String? channelName]) {
+    if (isConnected || _microphonePermissionDenied) return;
+    if (!_serverOnline) {
+      _showSnackBar('Attempting to connect, but the server appears to be offline.');
+    }
+    if (channelIndex == -1 || channelsNotifier.value.isEmpty) {
+      _showSnackBar('No channels available to connect.');
+      return;
+    }
+    try {
+      String channelToConnect = channelName ?? channelsNotifier.value[channelIndex]['name'];
+      _apiService.connectToWebSocket(channelToConnect);
+      setState(() {
+        isConnected = true;
+      });
+    } catch (e) {
+      Logger.log('Connection error: $e');
+      _showSnackBar('Failed to connect to the server.');
+      setState(() {
+        isConnected = false;
+      });
+    }
+  }
+
+  void _disconnect() {
+    if (!isConnected) return;
+    _apiService.closeWebSocket();
+    setState(() {
+      isConnected = false;
+    });
+  }
+
+  Future<void> _createChannel(String channelName) async {
+    if (!_serverOnline) {
+      _showSnackBar('Cannot create channel: Server is offline.');
+      return;
+    }
+    bool success = await _apiService.createChannel(channelName);
+    if (success) {
+      await _fetchChannels();
+      if (!mounted) return;
+
+      int newIndex =
+          channelsNotifier.value.indexWhere((channel) => channel['name'] == channelName);
+      if (newIndex != -1) {
+        setState(() {
+          channelIndex = newIndex;
+        });
+        SharedPreferences prefs = await SharedPreferences.getInstance();
+        prefs.setString('lastChannel', channelName);
+        if (isConnected) {
+          _apiService.switchChannel(channelName);
+        }
+        if (mounted) _showSnackBar('Channel "$channelName" created.');
+      }
+      if (mounted) Navigator.of(context).pop();
+    } else {
+      _showSnackBar('Failed to create channel. It may already exist or server error.');
+    }
+  }
+
+  Future<void> _joinChannel(String channelName) async {
+    if (!_serverOnline) {
+      _showSnackBar('Cannot join channel: Server is offline.');
+      return;
+    }
+    bool success = await _apiService.joinChannel(channelName);
+    if (success) {
+      await _fetchChannels();
+      if (!mounted) return;
+
+      int newIndex =
+          channelsNotifier.value.indexWhere((channel) => channel['name'] == channelName);
+      if (newIndex == -1) {
+        if (mounted) _showSnackBar('Channel "$channelName" does not exist.');
+        return;
+      }
+
+      if (channelsNotifier.value[channelIndex]['name'] == channelName) {
+        if (mounted) _showSnackBar('You are already in channel "$channelName".');
+        return;
+      }
+
+      setState(() {
+        channelIndex = newIndex;
+      });
+
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      prefs.setString('lastChannel', channelName);
+
+      if (isConnected) {
+        _apiService.switchChannel(channelName);
+      }
+
+      if (mounted) {
+        _showSnackBar('Joined channel "$channelName".');
+        Navigator.of(context).pop();
+      }
+    } else {
+      _showSnackBar('Failed to join channel. It may not exist or server error.');
+    }
+  }
+
+  Future<void> _leaveChannel(String channelName) async {
+    if (!_serverOnline) {
+      _showSnackBar('Cannot leave channel: Server is offline.');
+      return;
+    }
+
+    String? currentChannelName = channelsNotifier.value.isNotEmpty &&
+            channelIndex >= 0 &&
+            channelIndex < channelsNotifier.value.length
+        ? channelsNotifier.value[channelIndex]['name']
+        : null;
+
+    bool success = await _apiService.leaveChannel(channelName);
+    if (success) {
+      await _fetchChannels();
+      if (!mounted) return;
+
+      if (channelsNotifier.value.isNotEmpty) {
+        if (currentChannelName == channelName) {
+          // LEFT CURRENT CHANNEL
+          int newIndex = channelsNotifier.value
+              .indexWhere((channel) => channel['name'] == 'Channel 1');
+          if (newIndex != -1) {
+            setState(() {
+              channelIndex = newIndex;
+            });
+            SharedPreferences prefs = await SharedPreferences.getInstance();
+            prefs.setString('lastChannel', 'Channel 1');
+            if (isConnected) {
+              _apiService.switchChannel('Channel 1');
+            } else {
+              _connect('Channel 1');
+            }
+          } else {
+            // SWITCH TO FIRST AVAILABLE CHANNEL
+            setState(() {
+              channelIndex = 0;
+            });
+            SharedPreferences prefs = await SharedPreferences.getInstance();
+            prefs.setString('lastChannel', channelsNotifier.value[channelIndex]['name']);
+            if (isConnected) {
+              _apiService.switchChannel(channelsNotifier.value[channelIndex]['name']);
+            } else {
+              _connect(channelsNotifier.value[channelIndex]['name']);
+            }
+          }
+        } else {
+          // LEFT A DIFFERENT CHANNEL
+          int newIndex = channelsNotifier.value
+              .indexWhere((channel) => channel['name'] == currentChannelName);
+          if (newIndex != -1) {
+            setState(() {
+              channelIndex = newIndex;
+            });
+          } else {
+            int channel1Index = channelsNotifier.value
+                .indexWhere((channel) => channel['name'] == 'Channel 1');
+            if (channel1Index != -1) {
+              setState(() {
+                channelIndex = channel1Index;
+              });
+              SharedPreferences prefs = await SharedPreferences.getInstance();
+              prefs.setString('lastChannel', 'Channel 1');
+              if (isConnected) {
+                _apiService.switchChannel('Channel 1');
+              } else {
+                _connect('Channel 1');
+              }
+            } else {
+              setState(() {
+                channelIndex = 0;
+              });
+              SharedPreferences prefs = await SharedPreferences.getInstance();
+              prefs.setString('lastChannel', channelsNotifier.value[channelIndex]['name']);
+              if (isConnected) {
+                _apiService.switchChannel(channelsNotifier.value[channelIndex]['name']);
+              } else {
+                _connect(channelsNotifier.value[channelIndex]['name']);
+              }
+            }
+          }
+          _showSnackBar('Left channel "${channelName.toUpperCase()}".');
+        }
+      } else {
+        SharedPreferences prefs = await SharedPreferences.getInstance();
+        prefs.remove('lastChannel');
+        _showSnackBar('No channels available.');
+        _disconnect();
+      }
+    } else {
+      _showSnackBar('Failed to leave channel.');
+    }
+  }
+
+  Future<void> _deleteChannel(String channelName) async {
+    if (!_serverOnline) {
+      _showSnackBar('Cannot delete channel: Server is offline.');
+      return;
+    }
+    bool success = await _apiService.deleteChannel(channelName);
+    if (success) {
+      await _fetchChannels();
+      if (channelsNotifier.value.isNotEmpty) {
+        if (channelsNotifier.value[channelIndex]['name'] == channelName) {
+          // DELETED CURRENT CHANNEL
+          int newIndex = channelsNotifier.value
+              .indexWhere((channel) => channel['name'] == 'Channel 1');
+          if (newIndex != -1) {
+            setState(() {
+              channelIndex = newIndex;
+            });
+            SharedPreferences prefs = await SharedPreferences.getInstance();
+            prefs.setString('lastChannel', 'Channel 1');
+            if (isConnected) {
+              _apiService.switchChannel('Channel 1');
+            } else {
+              _connect('Channel 1');
+            }
+          } else {
+            setState(() {
+              channelIndex = 0;
+            });
+            SharedPreferences prefs = await SharedPreferences.getInstance();
+            prefs.setString('lastChannel', channelsNotifier.value[channelIndex]['name']);
+            if (isConnected) {
+              _apiService.switchChannel(channelsNotifier.value[channelIndex]['name']);
+            } else {
+              _connect(channelsNotifier.value[channelIndex]['name']);
+            }
+          }
+          _showSnackBar(
+              'Channel "$channelName" deleted. Switched to "${channelsNotifier.value[channelIndex]['name']}".');
+        } else {
+          _showSnackBar('Channel "$channelName" deleted.');
+        }
+      } else {
+        SharedPreferences prefs = await SharedPreferences.getInstance();
+        prefs.remove('lastChannel');
+        _showSnackBar('Channel "$channelName" deleted. No channels available.');
+        _disconnect();
+      }
+    } else {
+      _showSnackBar('Failed to delete channel.');
+    }
+  }
+
+  // ============================================================================
+  //                                    UI METHODS
+  // ============================================================================
+  // UI INTERACTIONS AND DIALOGS.
+
+  void _switchChannel(int delta) {
+    bool wasConnected = isConnected;
+    if (isConnected) {
+      _apiService.switchChannel(
+          channelsNotifier.value[(channelIndex + delta) % channelsNotifier.value.length]['name']);
+    }
+    setState(() {
+      int newIndex = (channelIndex + delta) % channelsNotifier.value.length;
+      if (newIndex < 0) {
+        newIndex += channelsNotifier.value.length;
+      }
+      channelIndex = newIndex;
+    });
+    SharedPreferences.getInstance().then((prefs) {
+      prefs.setString('lastChannel', channelsNotifier.value[channelIndex]['name']);
+    });
+    if (wasConnected) {
+      // NO NEED TO RECONNECT
+    }
+  }
+
   void _showSnackBar(String message) {
-    // Remove any existing MaterialBanner
+    // REMOVE EXISTING BANNER
     ScaffoldMessenger.of(context).removeCurrentMaterialBanner();
 
-    // Create a new MaterialBanner
+    // CREATE NEW BANNER
     final materialBanner = MaterialBanner(
       content: Text(
         message,
@@ -423,7 +688,7 @@ class _WalkieTalkieHomeState extends State<WalkieTalkieHome> {
       actions: [
         TextButton(
           onPressed: () {
-            if (!mounted) return; // Ensure the widget is still mounted
+            if (!mounted) return;
             ScaffoldMessenger.of(context).hideCurrentMaterialBanner();
           },
           child: const Text(
@@ -434,22 +699,19 @@ class _WalkieTalkieHomeState extends State<WalkieTalkieHome> {
       ],
     );
 
-    // Show the new MaterialBanner
+    // SHOW BANNER
     ScaffoldMessenger.of(context)
-      ..clearMaterialBanners() // Clear any existing banners
+      ..clearMaterialBanners()
       ..showMaterialBanner(materialBanner);
 
-    // Automatically dismiss the MaterialBanner after 3 seconds
+    // AUTO DISMISS AFTER 3 SECONDS
     Future.delayed(const Duration(seconds: 3), () {
-      if (!mounted) return; // Ensure the widget is still mounted
+      if (!mounted) return;
       ScaffoldMessenger.of(context).hideCurrentMaterialBanner();
     });
   }
 
-  // Method to display channel options
   void _showChannelOptionsDialog() {
-    // Users can now navigate the menus even when disconnected
-
     showDialog(
       context: context,
       builder: (context) {
@@ -463,7 +725,7 @@ class _WalkieTalkieHomeState extends State<WalkieTalkieHome> {
                 icon: Icons.add,
                 text: 'Create Channel',
                 onTap: () {
-                  Navigator.of(context).pop(); // Close current dialog
+                  Navigator.of(context).pop();
                   _showCreateChannelDialog();
                 },
               ),
@@ -471,7 +733,7 @@ class _WalkieTalkieHomeState extends State<WalkieTalkieHome> {
                 icon: Icons.login,
                 text: 'Join Channel',
                 onTap: () {
-                  Navigator.of(context).pop(); // Close current dialog
+                  Navigator.of(context).pop();
                   _showJoinChannelDialog();
                 },
               ),
@@ -479,7 +741,7 @@ class _WalkieTalkieHomeState extends State<WalkieTalkieHome> {
                 icon: Icons.list,
                 text: 'Manage Channels',
                 onTap: () {
-                  Navigator.of(context).pop(); // Close current dialog
+                  Navigator.of(context).pop();
                   _showManageChannelsDialog();
                 },
               ),
@@ -490,30 +752,6 @@ class _WalkieTalkieHomeState extends State<WalkieTalkieHome> {
     );
   }
 
-  // Custom Dialog Widget
-  void _showCustomDialog({
-    required String title,
-    required IconData icon,
-    required Widget content,
-    List<Widget>? actions,
-    double iconVerticalOffset = 0.0, // New parameter
-  }) {
-    showDialog(
-      context: context,
-      barrierDismissible: false, // Prevent dismissal by tapping outside
-      builder: (context) {
-        return _CustomDialog(
-          title: title,
-          icon: icon,
-          content: content,
-          actions: actions,
-          iconVerticalOffset: iconVerticalOffset, // Pass the offset
-        );
-      },
-    );
-  }
-
-  // Method to display the create channel dialog
   void _showCreateChannelDialog() {
     String channelName = '';
     _showCustomDialog(
@@ -540,16 +778,14 @@ class _WalkieTalkieHomeState extends State<WalkieTalkieHome> {
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                // Back Button
                 _DialogButton(
                   icon: Icons.arrow_back,
                   onTap: () {
                     Navigator.of(context).pop();
-                    _showChannelOptionsDialog(); // Go back to main dialog
+                    _showChannelOptionsDialog();
                   },
                 ),
                 const SizedBox(width: 10),
-                // Confirm Button
                 _DialogButton(
                   icon: Icons.check,
                   onTap: () async {
@@ -565,11 +801,10 @@ class _WalkieTalkieHomeState extends State<WalkieTalkieHome> {
           ],
         ),
       ),
-      iconVerticalOffset: 1.0, // Adjust icon position if needed
+      iconVerticalOffset: 1.0,
     );
   }
 
-  // Method to display the join channel dialog
   void _showJoinChannelDialog() {
     String channelName = '';
     _showCustomDialog(
@@ -596,16 +831,14 @@ class _WalkieTalkieHomeState extends State<WalkieTalkieHome> {
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                // Back Button
                 _DialogButton(
                   icon: Icons.arrow_back,
                   onTap: () {
                     Navigator.of(context).pop();
-                    _showChannelOptionsDialog(); // Go back to main dialog
+                    _showChannelOptionsDialog();
                   },
                 ),
                 const SizedBox(width: 10),
-                // Confirm Button
                 _DialogButton(
                   icon: Icons.check,
                   onTap: () async {
@@ -621,7 +854,7 @@ class _WalkieTalkieHomeState extends State<WalkieTalkieHome> {
           ],
         ),
       ),
-      iconVerticalOffset: 1.0, // Adjust icon position if needed
+      iconVerticalOffset: 1.0,
     );
   }
 
@@ -632,7 +865,6 @@ class _WalkieTalkieHomeState extends State<WalkieTalkieHome> {
       content: ValueListenableBuilder<List<dynamic>>(
         valueListenable: channelsNotifier,
         builder: (context, channelsList, _) {
-          // Include both user-created and joined channels
           List<dynamic> userChannels = channelsList.where((channel) {
             return channel['creatorId'] == _apiService.userId ||
                 (channel['members'] != null && channel['members'].contains(_apiService.userId));
@@ -640,7 +872,7 @@ class _WalkieTalkieHomeState extends State<WalkieTalkieHome> {
 
           return ConstrainedBox(
             constraints: BoxConstraints(
-              maxHeight: MediaQuery.of(context).size.height * 0.5, // Set a max height
+              maxHeight: MediaQuery.of(context).size.height * 0.5,
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -668,7 +900,7 @@ class _WalkieTalkieHomeState extends State<WalkieTalkieHome> {
                                 .indexWhere((ch) => ch['name'] == channelName);
                             if (newIndex != -1) {
                               _switchChannel(newIndex - channelIndex);
-                              Navigator.of(context).pop(); // Close dialog
+                              Navigator.of(context).pop();
                               _showSnackBar('Switched to "$channelName".');
                             }
                           },
@@ -691,7 +923,7 @@ class _WalkieTalkieHomeState extends State<WalkieTalkieHome> {
                       icon: Icons.arrow_back,
                       onTap: () {
                         Navigator.of(context).pop();
-                        _showChannelOptionsDialog(); // Go back to main dialog
+                        _showChannelOptionsDialog();
                       },
                     ),
                   ],
@@ -701,236 +933,61 @@ class _WalkieTalkieHomeState extends State<WalkieTalkieHome> {
           );
         },
       ),
-      iconVerticalOffset: 1.0, // Adjust icon position if needed
+      iconVerticalOffset: 1.0,
     );
   }
 
-  Future<void> _createChannel(String channelName) async {
-    if (!_serverOnline) {
-      _showSnackBar('Cannot create channel: Server is offline.');
-      return;
-    }
-    bool success = await _apiService.createChannel(channelName);
-    if (success) {
-      await _fetchChannels();
-      if (!mounted) return; // Check if the widget is still mounted
-
-      int newIndex =
-          channelsNotifier.value.indexWhere((channel) => channel['name'] == channelName);
-      if (newIndex != -1) {
-        setState(() {
-          channelIndex = newIndex;
-        });
-        SharedPreferences prefs = await SharedPreferences.getInstance();
-        prefs.setString('lastChannel', channelName);
-        if (isConnected) {
-          _apiService.switchChannel(channelName);
-        }
-        if (mounted) _showSnackBar('Channel "$channelName" created.');
-      }
-      if (mounted) Navigator.of(context).pop(); // Close dialog
-    } else {
-      _showSnackBar('Failed to create channel. It may already exist or server error.');
-    }
+  void _showCustomDialog({
+    required String title,
+    required IconData icon,
+    required Widget content,
+    List<Widget>? actions,
+    double iconVerticalOffset = 0.0,
+  }) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return _CustomDialog(
+          title: title,
+          icon: icon,
+          content: content,
+          actions: actions,
+          iconVerticalOffset: iconVerticalOffset,
+        );
+      },
+    );
   }
 
-  Future<void> _joinChannel(String channelName) async {
-    if (!_serverOnline) {
-      _showSnackBar('Cannot join channel: Server is offline.');
-      return;
+  // ============================================================================
+  //                                   DISPOSE METHOD
+  // ============================================================================
+  // CLEANUP RESOURCES WHEN THE WIDGET IS DISPOSED.
+
+  @override
+  void dispose() {
+    if (isTalking) {
+      _stopStreaming();
     }
-    bool success = await _apiService.joinChannel(channelName);
-    if (success) {
-      await _fetchChannels();
-      if (!mounted) return; // Ensure the widget is still mounted
-
-      int newIndex =
-          channelsNotifier.value.indexWhere((channel) => channel['name'] == channelName);
-      if (newIndex == -1) {
-        if (mounted) _showSnackBar('Channel "$channelName" does not exist.');
-        return;
-      }
-
-      if (channelsNotifier.value[channelIndex]['name'] == channelName) {
-        if (mounted) _showSnackBar('You are already in channel "$channelName".');
-        return;
-      }
-
-      // Update the state with the new channel index
-      setState(() {
-        channelIndex = newIndex;
-      });
-
-      SharedPreferences prefs = await SharedPreferences.getInstance();
-      prefs.setString('lastChannel', channelName);
-
-      // Switch to the new channel without disconnecting
-      if (isConnected) {
-        _apiService.switchChannel(channelName);
-      }
-
-      if (mounted) {
-        _showSnackBar('Joined channel "$channelName".');
-        Navigator.of(context).pop(); // Close dialog
-      }
-    } else {
-      _showSnackBar('Failed to join channel. It may not exist or server error.');
-    }
-  }
-
-  Future<void> _leaveChannel(String channelName) async {
-  if (!_serverOnline) {
-    _showSnackBar('Cannot leave channel: Server is offline.');
-    return;
-  }
-
-  // Store the current channel name before updating channels
-  String? currentChannelName = channelsNotifier.value.isNotEmpty &&
-          channelIndex >= 0 &&
-          channelIndex < channelsNotifier.value.length
-      ? channelsNotifier.value[channelIndex]['name']
-      : null;
-
-  bool success = await _apiService.leaveChannel(channelName);
-  if (success) {
-    await _fetchChannels();
-    if (!mounted) return;
-
-    if (channelsNotifier.value.isNotEmpty) {
-      if (currentChannelName == channelName) {
-        // The user left the current channel
-        int newIndex = channelsNotifier.value
-            .indexWhere((channel) => channel['name'] == 'Channel 1');
-        if (newIndex != -1) {
-          setState(() {
-            channelIndex = newIndex;
-          });
-          SharedPreferences prefs = await SharedPreferences.getInstance();
-          prefs.setString('lastChannel', 'Channel 1');
-          if (isConnected) {
-            _apiService.switchChannel('Channel 1');
-          } else {
-            _connect('Channel 1');
-          }
-        } else {
-          // If 'Channel 1' is not available, switch to first available channel
-          setState(() {
-            channelIndex = 0;
-          });
-          SharedPreferences prefs = await SharedPreferences.getInstance();
-          prefs.setString('lastChannel', channelsNotifier.value[channelIndex]['name']);
-          if (isConnected) {
-            _apiService.switchChannel(channelsNotifier.value[channelIndex]['name']);
-          } else {
-            _connect(channelsNotifier.value[channelIndex]['name']);
-          }
-        }
-      } else {
-        // The user left a channel that is not the current one
-        // Ensure the channelIndex is still valid
-        int newIndex = channelsNotifier.value
-            .indexWhere((channel) => channel['name'] == currentChannelName);
-        if (newIndex != -1) {
-          setState(() {
-            channelIndex = newIndex;
-          });
-        } else {
-          // Current channel is no longer available, switch to 'Channel 1' or first available
-          int channel1Index = channelsNotifier.value
-              .indexWhere((channel) => channel['name'] == 'Channel 1');
-          if (channel1Index != -1) {
-            setState(() {
-              channelIndex = channel1Index;
-            });
-            SharedPreferences prefs = await SharedPreferences.getInstance();
-            prefs.setString('lastChannel', 'Channel 1');
-            if (isConnected) {
-              _apiService.switchChannel('Channel 1');
-            } else {
-              _connect('Channel 1');
-            }
-          } else {
-            setState(() {
-              channelIndex = 0;
-            });
-            SharedPreferences prefs = await SharedPreferences.getInstance();
-            prefs.setString('lastChannel', channelsNotifier.value[channelIndex]['name']);
-            if (isConnected) {
-              _apiService.switchChannel(channelsNotifier.value[channelIndex]['name']);
-            } else {
-              _connect(channelsNotifier.value[channelIndex]['name']);
-            }
-          }
-        }
-      }
-      _showSnackBar('Left channel "${channelName.toUpperCase()}".');
-    } else {
-      SharedPreferences prefs = await SharedPreferences.getInstance();
-      prefs.remove('lastChannel');
-      _showSnackBar('No channels available.');
+    if (isConnected) {
       _disconnect();
     }
-  } else {
-    _showSnackBar('Failed to leave channel.');
+    _recorderService.closeRecorder();
+    _audioStreamSubscription?.cancel();
+    _audioStreamController.close();
+    _apiService.dispose();
+    channelsNotifier.dispose();
+    super.dispose();
   }
-}
 
-
-  Future<void> _deleteChannel(String channelName) async {
-    if (!_serverOnline) {
-      _showSnackBar('Cannot delete channel: Server is offline.');
-      return;
-    }
-    bool success = await _apiService.deleteChannel(channelName);
-    if (success) {
-      await _fetchChannels();
-      if (channelsNotifier.value.isNotEmpty) {
-        if (channelsNotifier.value[channelIndex]['name'] == channelName) {
-          // If we deleted the channel we're currently connected to
-          int newIndex =
-              channelsNotifier.value.indexWhere((channel) => channel['name'] == 'Channel 1');
-          if (newIndex != -1) {
-            setState(() {
-              channelIndex = newIndex;
-            });
-            SharedPreferences prefs = await SharedPreferences.getInstance();
-            prefs.setString('lastChannel', 'Channel 1');
-            if (isConnected) {
-              _apiService.switchChannel('Channel 1');
-            } else {
-              _connect('Channel 1'); // Attempt to connect to "Channel 1"
-            }
-          } else {
-            setState(() {
-              channelIndex = 0;
-            });
-            SharedPreferences prefs = await SharedPreferences.getInstance();
-            prefs.setString('lastChannel', channelsNotifier.value[channelIndex]['name']);
-            if (isConnected) {
-              _apiService.switchChannel(channelsNotifier.value[channelIndex]['name']);
-            } else {
-              _connect(channelsNotifier.value[channelIndex]['name']); // Attempt to connect
-            }
-          }
-          _showSnackBar(
-              'Channel "$channelName" deleted. Switched to "${channelsNotifier.value[channelIndex]['name']}".');
-        } else {
-          _showSnackBar('Channel "$channelName" deleted.');
-        }
-      } else {
-        SharedPreferences prefs = await SharedPreferences.getInstance();
-        prefs.remove('lastChannel');
-        _showSnackBar('Channel "$channelName" deleted. No channels available.');
-        _disconnect();
-      }
-    } else {
-      _showSnackBar('Failed to delete channel.');
-    }
-  }
+  // ============================================================================
+  //                                    BUILD METHOD
+  // ============================================================================
+  // BUILD THE WIDGET TREE.
 
   @override
   Widget build(BuildContext context) {
-    // Show a SnackBar if microphone permission is denied
+    // SHOW SNACKBAR IF MICROPHONE PERMISSION IS DENIED
     if (_microphonePermissionDenied) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _showSnackBar('Microphone permission is required.');
@@ -944,11 +1001,10 @@ class _WalkieTalkieHomeState extends State<WalkieTalkieHome> {
         child: ValueListenableBuilder<List<dynamic>>(
           valueListenable: channelsNotifier,
           builder: (context, channelsList, _) {
-            // Always show the home screen regardless of server status
             return Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // Connectivity Card with reduced width
+                // CONNECTIVITY CARD
                 SizedBox(
                   width: MediaQuery.of(context).size.width * 0.85,
                   child: ConnectivityCard(
@@ -964,7 +1020,7 @@ class _WalkieTalkieHomeState extends State<WalkieTalkieHome> {
                   ),
                 ),
                 const SizedBox(height: 40),
-                // Push-to-Talk Image Button
+                // PUSH-TO-TALK BUTTON
                 GestureDetector(
                   onTapDown: (_) {
                     if (isConnected) {
@@ -1002,19 +1058,19 @@ class _CustomDialog extends StatelessWidget {
   final IconData icon;
   final Widget content;
   final List<Widget>? actions;
-  final double iconVerticalOffset; // New parameter
+  final double iconVerticalOffset;
 
   const _CustomDialog({
     required this.title,
     required this.icon,
     required this.content,
     this.actions,
-    this.iconVerticalOffset = 1.0, // Default value
+    this.iconVerticalOffset = 1.0,
   });
 
   @override
   Widget build(BuildContext context) {
-    final TextStyle _textStyle = const TextStyle(
+    const TextStyle textStyle = TextStyle(
       color: Colors.white,
       fontSize: 16,
       fontFamily: 'RetroFont',
@@ -1035,7 +1091,7 @@ class _CustomDialog extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Row(
-                  crossAxisAlignment: CrossAxisAlignment.center, // Added this line
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     Transform.translate(
                       offset: Offset(0, iconVerticalOffset),
@@ -1045,7 +1101,7 @@ class _CustomDialog extends StatelessWidget {
                     Expanded(
                       child: Text(
                         title,
-                        style: _textStyle,
+                        style: textStyle,
                       ),
                     ),
                   ],
@@ -1066,18 +1122,19 @@ class _DialogOption extends StatelessWidget {
   final IconData icon;
   final String text;
   final VoidCallback onTap;
-  final double iconVerticalOffset; // New parameter
+  final double iconVerticalOffset;
 
   const _DialogOption({
     required this.icon,
     required this.text,
     required this.onTap,
-    this.iconVerticalOffset = 1.0, // Default value
+    // ignore: unused_element
+    this.iconVerticalOffset = 1.0,
   });
 
   @override
   Widget build(BuildContext context) {
-    final TextStyle _textStyle = const TextStyle(
+    const TextStyle textStyle = TextStyle(
       color: Colors.white,
       fontSize: 16,
       fontFamily: 'RetroFont',
@@ -1094,7 +1151,7 @@ class _DialogOption extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 15, horizontal: 10),
         margin: const EdgeInsets.symmetric(vertical: 5),
         child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center, // Added this line
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Transform.translate(
               offset: Offset(0, iconVerticalOffset),
@@ -1104,7 +1161,7 @@ class _DialogOption extends StatelessWidget {
             Expanded(
               child: Text(
                 text,
-                style: _textStyle,
+                style: textStyle,
               ),
             ),
             const Icon(Icons.chevron_right, color: Colors.white54),
@@ -1124,6 +1181,7 @@ class _DialogButton extends StatelessWidget {
   const _DialogButton({
     required this.icon,
     required this.onTap,
+    // ignore: unused_element
     this.color = Colors.white,
   });
 
@@ -1134,11 +1192,11 @@ class _DialogButton extends StatelessWidget {
       child: Container(
         decoration: const BoxDecoration(
             color: Color.fromARGB(202, 255, 255, 255), shape: BoxShape.circle),
-        padding: const EdgeInsets.all(8.0), // Reduced from 12.0 to 8.0
+        padding: const EdgeInsets.all(8.0),
         child: Icon(
           icon,
           color: Colors.black,
-          size: 25.0, // Adjusted size
+          size: 25.0,
         ),
       ),
     );
@@ -1161,7 +1219,7 @@ class _ChannelCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final TextStyle _textStyle = const TextStyle(
+    const TextStyle textStyle = TextStyle(
       color: Colors.white,
       fontSize: 16,
       fontFamily: 'RetroFont',
@@ -1184,7 +1242,7 @@ class _ChannelCard extends StatelessWidget {
             Expanded(
               child: Text(
                 channelName,
-                style: _textStyle,
+                style: textStyle,
               ),
             ),
             IconButton(

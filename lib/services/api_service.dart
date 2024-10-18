@@ -1,6 +1,6 @@
 // api_service.dart
 
-import 'package:web_socket_channel/io.dart'; // Updated import
+import 'package:web_socket_channel/io.dart';
 import 'dart:typed_data';
 import 'package:flutter_sound/flutter_sound.dart';
 import 'dart:async';
@@ -12,31 +12,20 @@ import 'package:uuid/uuid.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
-  IOWebSocketChannel? _channel; // Updated type
-  IOWebSocketChannel? _notificationChannel; // Updated type
+  IOWebSocketChannel? _channel;
+  IOWebSocketChannel? _notificationChannel;
   final FlutterSoundPlayer _player = FlutterSoundPlayer();
   bool isFeedingAudio = false;
 
-  // Unique user ID
   String? userId;
 
-  // Event Stream Controller
   final _eventController = StreamController<Map<String, dynamic>>.broadcast();
   Stream<Map<String, dynamic>> get events => _eventController.stream;
-
-  // Server status
   bool _isServerOnline = true;
-
-  // Heartbeat timer
   Timer? _heartbeatTimer;
-
-  // Flag to indicate if the disconnection was intentional
   bool _isManuallyClosed = false;
-
-  // Flag to indicate if a channel switch is in progress
   bool _isSwitchingChannel = false;
 
-  // Initialize user ID
   Future<void> initializeUserId() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     String? storedUserId = prefs.getString('userId');
@@ -47,11 +36,9 @@ class ApiService {
       userId = storedUserId;
     }
 
-    // Connect to notification WebSocket
-    await connectToNotificationWebSocket(); // Await the async method
+    await connectToNotificationWebSocket();
   }
 
-  // Heartbeat function to check server status
   void startHeartbeat() {
     _heartbeatTimer = Timer.periodic(const Duration(seconds: 5), (timer) async {
       try {
@@ -76,9 +63,8 @@ class ApiService {
     });
   }
 
-  // Buffer for incoming audio data
   final Queue<Uint8List> _audioBuffer = Queue<Uint8List>();
-  final int maxBufferLength = 500; // Max number of audio chunks to buffer
+  final int maxBufferLength = 500;
 
   ApiService() {
     _initializeAudio();
@@ -98,7 +84,6 @@ class ApiService {
         Uri.parse('ws://192.168.0.104:8080/ws/notifications'),
       );
 
-      // Send the register message with userId
       _notificationChannel!.sink.add(json.encode({
         'type': 'register',
         'userId': userId,
@@ -109,13 +94,11 @@ class ApiService {
           if (message is String) {
             final decodedMessage = json.decode(message);
             if (decodedMessage['type'] == 'channel_deleted') {
-              // Handle channel deletion notification
               _eventController.add({
                 'type': 'channel_deleted',
                 'channelName': decodedMessage['channelName'],
               });
             }
-            // Handle other notification types if needed
           }
         },
         onError: (error) {
@@ -123,7 +106,6 @@ class ApiService {
         },
         onDone: () {
           Logger.log("Notification WebSocket connection closed");
-          // Optionally, attempt to reconnect
         },
       );
     } catch (e) {
@@ -132,7 +114,7 @@ class ApiService {
   }
 
   void connectToWebSocket(String channel) async {
-    _isManuallyClosed = false; // Reset the flag
+    _isManuallyClosed = false;
     if (userId == null) {
       Logger.log('User ID not initialized.');
       return;
@@ -148,22 +130,19 @@ class ApiService {
         (message) {
           if (message is Uint8List) {
             try {
-              _enqueueAudio(message); // Enqueue audio for buffered playback
+              _enqueueAudio(message);
             } catch (e) {
               Logger.log("Error processing incoming audio: $e");
             }
           } else {
             final decodedMessage = json.decode(message);
             if (decodedMessage['type'] == 'channel_deleted') {
-              // Handle channel deletion notification
               Logger.log("Channel deleted: ${decodedMessage['channelName']}");
               _eventController.add({
                 'type': 'channel_deleted',
                 'channelName': decodedMessage['channelName'],
               });
-              // Do not automatically switch channels here
             } else if (decodedMessage['type'] == 'error') {
-              // Handle error messages
               Logger.log("Error: ${decodedMessage['message']}");
             }
           }
@@ -177,19 +156,18 @@ class ApiService {
           if (!_isManuallyClosed && !_isSwitchingChannel) {
             _eventController.add({'type': 'connection_closed'});
           }
-          // Reset the switching channel flag
           _isSwitchingChannel = false;
         },
       );
     } catch (e) {
       Logger.log("Error connecting to WebSocket: $e");
       _eventController.add({'type': 'connection_error'});
-      _isSwitchingChannel = false; // Reset the flag on error
+      _isSwitchingChannel = false;
     }
   }
 
   void switchChannel(String newChannel) {
-    _isSwitchingChannel = true; // Set the flag
+    _isSwitchingChannel = true; 
     if (_channel != null) {
       _channel!.sink.close();
       _channel = null;
@@ -206,7 +184,6 @@ class ApiService {
   }
 
   void _enqueueAudio(Uint8List audioData) {
-    // Limit the buffer size to prevent memory issues
     if (_audioBuffer.length >= maxBufferLength) {
       _audioBuffer.removeFirst();
     }
@@ -235,22 +212,21 @@ class ApiService {
           await _player.feedFromStream(_audioBuffer.removeFirst());
         } catch (e) {
           Logger.log("Error feeding audio stream: $e");
-          break; // Prevent continuous loop in case of errors
+          break;
         }
       } else {
         Logger.log("Player is not ready for streaming.");
-        break; // Break to avoid infinite loop
+        break;
       }
     }
     isFeedingAudio = false;
   }
 
   void closeWebSocket() {
-    _isManuallyClosed = true; // Set the flag
+    _isManuallyClosed = true; 
     _channel?.sink.close();
-    _channel = null; // Reset the channel to allow reconnection
+    _channel = null; 
 
-    // Clear the audio buffer and reset the flag
     _audioBuffer.clear();
     isFeedingAudio = false;
   }
@@ -260,10 +236,9 @@ class ApiService {
     _player.closePlayer();
     _eventController.close();
     _heartbeatTimer?.cancel();
-    _notificationChannel?.sink.close(); // Close the notification WebSocket
+    _notificationChannel?.sink.close();
   }
 
-  // Fetch channels from the server
   Future<List<dynamic>> fetchChannels() async {
     if (userId == null) {
       Logger.log('User ID not initialized.');
@@ -285,7 +260,6 @@ class ApiService {
     }
   }
 
-  // Create a new channel
   Future<bool> createChannel(String channelName) async {
     if (userId == null) {
       Logger.log('User ID not initialized.');
@@ -312,7 +286,6 @@ class ApiService {
     }
   }
 
-  // Join a channel
   Future<bool> joinChannel(String channelName) async {
     if (userId == null) {
       Logger.log('User ID not initialized.');
@@ -339,7 +312,6 @@ class ApiService {
     }
   }
 
-  // Leave a channel
   Future<bool> leaveChannel(String channelName) async {
     if (userId == null) {
       Logger.log('User ID not initialized.');
@@ -366,7 +338,6 @@ class ApiService {
     }
   }
 
-  // Delete a channel
   Future<bool> deleteChannel(String channelName) async {
     if (userId == null) {
       Logger.log('User ID not initialized.');
@@ -393,7 +364,6 @@ class ApiService {
     }
   }
 
-  // Method to check if the server is online
   Future<bool> checkServerOnline() async {
     try {
       final response = await http.get(Uri.parse('http://192.168.0.104:8080/heartbeat'));
@@ -406,8 +376,6 @@ class ApiService {
     return false;
   }
 
-  // Getter to access the server status
   bool get isServerOnline => _isServerOnline;
-
   bool get isSwitchingChannel => _isSwitchingChannel;
 }

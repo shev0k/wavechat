@@ -16,5 +16,38 @@
     "creatorId": "system",
     "isDefault": true,
     "members": null
+  },
+  "Mimi": {
+    "name": "Mimi",
+    "creatorId": "1bc5f0b2-b997-40f6-af52-63d83f8ae6c6",
+    "isDefault": false,
+    "members": [
+      "1bc5f0b2-b997-40f6-af52-63d83f8ae6c6"
+    ]
+  },
+  "s3rl": {
+    "name": "s3rl",
+    "creatorId": "1bc5f0b2-b997-40f6-af52-63d83f8ae6c6",
+    "isDefault": false,
+    "members": [
+      "1bc5f0b2-b997-40f6-af52-63d83f8ae6c6"
+    ]
+  },
+  "opa": {
+    "name": "opa",
+    "creatorId": "5e166c70-6101-452a-bc8f-4a49e702fa04",
+    "isDefault": false,
+    "members": [
+      "5e166c70-6101-452a-bc8f-4a49e702fa04",
+      "1bc5f0b2-b997-40f6-af52-63d83f8ae6c6"
+    ]
+  },
+  "tits": {
+    "name": "tits",
+    "creatorId": "1bc5f0b2-b997-40f6-af52-63d83f8ae6c6",
+    "isDefault": false,
+    "members": [
+      "1bc5f0b2-b997-40f6-af52-63d83f8ae6c6"
+    ]
   }
 }
