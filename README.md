@@ -6,8 +6,7 @@
 
 **WaveChat** is an instant voice messaging app designed to replicate the simplicity and fun of classic walkie-talkies. It allows users to join channels, communicate with friends in real-time, and experience a seamless, live audio connection with a sleek, retro-styled interface. Whether you're coordinating in real-time or sharing spontaneous moments, WaveChat ensures instant and immersive communication.
 
-![WaveChat App Preview](https://raw.githubusercontent.com/shev0k/wavechat/refs/heads/main/images/WaveChat.png)
-![WaveChat App Preview](https://raw.githubusercontent.com/shev0k/wavechat/refs/heads/Features/images/WaveChat2.png)
+![WaveChat App Preview](https://raw.githubusercontent.com/shev0k/wavechat/refs/heads/Features/images/WaveChatV2.png)
 
 ## Key Features
 
@@ -18,6 +17,8 @@
 - **Simple, Minimalist Interface**: A sleek, black-and-white interface inspired by retro walkie-talkies keeps the focus on the conversation, with tactile feedback and responsive controls.
 
 - **Push-to-Talk**: Hold down the push-to-talk button to broadcast your voice. Let go when done to allow others to speak, ensuring natural, walkie-talkie-style communication.
+
+![WaveChat App Preview](https://raw.githubusercontent.com/shev0k/wavechat/refs/heads/Features/images/WaveChatV3.png)
 
 ## Technology Stack
 
