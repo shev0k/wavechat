@@ -1,4 +1,5 @@
 // widgets/connectivity_card.dart
+
 import 'package:flutter/material.dart';
 
 class ConnectivityCard extends StatelessWidget {
@@ -8,6 +9,7 @@ class ConnectivityCard extends StatelessWidget {
   final VoidCallback onConnect;
   final VoidCallback onDisconnect;
   final Function(int) onSwitchChannel;
+  final VoidCallback onChannelOptions;
 
   const ConnectivityCard({
     super.key,
@@ -17,10 +19,15 @@ class ConnectivityCard extends StatelessWidget {
     required this.onConnect,
     required this.onDisconnect,
     required this.onSwitchChannel,
+    required this.onChannelOptions,
   });
 
   @override
   Widget build(BuildContext context) {
+    String currentChannelName = (channels.isNotEmpty && channelIndex >= 0 && channelIndex < channels.length)
+        ? channels[channelIndex]
+        : 'No Channels';
+
     return Card(
       color: Colors.black,
       shape: RoundedRectangleBorder(
@@ -28,11 +35,9 @@ class ConnectivityCard extends StatelessWidget {
         side: const BorderSide(color: Colors.white),
       ),
       child: Padding(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 20.0, vertical: 24.0),
+        padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 24.0),
         child: Stack(
           children: [
-            // Place the icon at the top-right corner
             Positioned(
               top: 0,
               right: 0,
@@ -46,7 +51,6 @@ class ConnectivityCard extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                // Connectivity Status Text
                 Text(
                   isConnected ? 'ONLINE' : 'OFFLINE',
                   style: const TextStyle(
@@ -56,11 +60,9 @@ class ConnectivityCard extends StatelessWidget {
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 20),
-                // Channel Selector
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    // Decrease Channel Button
                     IconButton(
                       icon: const Text(
                         '▼',
@@ -69,21 +71,19 @@ class ConnectivityCard extends StatelessWidget {
                           fontSize: 32,
                         ),
                       ),
-                      onPressed: () {
+                      onPressed: (channels.isNotEmpty && channelIndex >= 0) ? () {
                         onSwitchChannel(-1);
-                      },
+                      } : null,
                     ),
                     const SizedBox(width: 20),
-                    // Current Channel
                     Text(
-                      channels[channelIndex],
+                      currentChannelName,
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 24,
                       ),
                     ),
                     const SizedBox(width: 20),
-                    // Increase Channel Button
                     IconButton(
                       icon: const Text(
                         '▲',
@@ -92,31 +92,60 @@ class ConnectivityCard extends StatelessWidget {
                           fontSize: 32,
                         ),
                       ),
-                      onPressed: () {
+                      onPressed: (channels.isNotEmpty && channelIndex >= 0) ? () {
                         onSwitchChannel(1);
-                      },
+                      } : null,
                     ),
                   ],
                 ),
                 const SizedBox(height: 20),
-                // Turn On/Off Button with Icon, now round
-                ElevatedButton(
-                  onPressed: isConnected ? onDisconnect : onConnect,
-                  style: ElevatedButton.styleFrom(
-                    shape: const CircleBorder(
-                      side: BorderSide(color: Colors.white),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 200),
+                      child: ElevatedButton(
+                        key: ValueKey(isConnected),
+                        onPressed: (channelIndex >= 0) ? (isConnected ? onDisconnect : onConnect) : null,
+                        style: ElevatedButton.styleFrom(
+                          shape: const CircleBorder(
+                            side: BorderSide(color: Colors.white),
+                          ),
+                          foregroundColor:
+                              isConnected ? Colors.black : Colors.white,
+                          backgroundColor:
+                              isConnected ? Colors.white : Colors.black,
+                          padding: const EdgeInsets.all(16.0),
+                        ),
+                        child: Icon(
+                          Icons.power_settings_new,
+                          color: isConnected ? Colors.black : Colors.white,
+                          size: 30,
+                        ),
+                      ),
                     ),
-                    foregroundColor:
-                        isConnected ? Colors.black : Colors.white,
-                    backgroundColor:
-                        isConnected ? Colors.white : Colors.black,
-                    padding: const EdgeInsets.all(16.0),
-                  ),
-                  child: Icon(
-                    Icons.power_settings_new,
-                    color: isConnected ? Colors.black : Colors.white,
-                    size: 30,
-                  ),
+                    const SizedBox(width: 20),
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 200),
+                      child: ElevatedButton(
+                        key: const ValueKey('settings'),
+                        onPressed: onChannelOptions,
+                        style: ElevatedButton.styleFrom(
+                          shape: const CircleBorder(
+                            side: BorderSide(color: Colors.white),
+                          ),
+                          foregroundColor: Colors.white,
+                          backgroundColor: Colors.black,
+                          padding: const EdgeInsets.all(16.0),
+                        ),
+                        child: const Icon(
+                          Icons.settings,
+                          color: Colors.white,
+                          size: 30,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),

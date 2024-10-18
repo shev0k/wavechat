@@ -12,7 +12,7 @@ void main() {
   ));
 
   SystemChrome.setPreferredOrientations([
-    DeviceOrientation.portraitUp, // Lock orientation to portrait mode
+    DeviceOrientation.portraitUp,
   ]).then((_) {
     runApp(const WalkieTalkieApp());
   });
@@ -25,10 +25,10 @@ class WalkieTalkieApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Walkie Talkie',
-      debugShowCheckedModeBanner: false, // Hide debug banner
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        brightness: Brightness.dark, // Black and white theme
-        fontFamily: 'RetroFont', // Use the retro font
+        brightness: Brightness.dark,
+        fontFamily: 'RetroFont',
       ),
       home: const WalkieTalkieHome(),
     );
